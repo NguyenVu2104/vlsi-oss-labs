@@ -1,0 +1,6 @@
+build/
+obj_dir/
+*.log
+*.vcd
+*.fst
+note.txt

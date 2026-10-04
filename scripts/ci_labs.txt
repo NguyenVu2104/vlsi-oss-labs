@@ -1,0 +1,3 @@
+
+# Labs checked by CI. One path per line. Add a lab here when it is complete.
+labs/ch1_verilog_sim/lab2_and_gate
