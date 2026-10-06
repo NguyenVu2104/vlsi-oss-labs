@@ -1,0 +1,25 @@
+
+20. Printing statistics.
+
+=== and_gate ===
+
+        +----------------------------Count including submodules.
+        |        +-------------------Area including submodules.
+        |        |        +----------Local count, excluding submodules.
+        |        |        |        +-Local area, excluding submodules.
+        |        |        |        | 
+        3        -        3        - wires
+        3        -        3        - wire bits
+        3        -        3        - public wires
+        3        -        3        - public wire bits
+        3        -        3        - ports
+        3        -        3        - port bits
+        -        -        -        - memories
+        -        -        -        - memory bits
+        -        -        -        - processes
+        1    6.256        1    6.256 cells
+        1    6.256        1    6.256   sky130_fd_sc_hd__and2_1
+
+   Chip area for module '\and_gate': 6.256000
+     of which used for sequential elements: 0.000000 (0.00%)
+
