@@ -1,0 +1,262 @@
+Một lệnh có thể gom area và sự kiện của mọi stage; chỉ mở log chi tiết ở stage có area đổi:
+
+grep -H -E "Design area|Instance count|Number of instances|Inserted|Removed|Resized" work/logs/sky130hd/alu32/base/*.log
+
+# Trong synth_stat.txt:
+Chip area for module '\alu32': 8807.196800
+Number of instances: 1258
+con số area này được lấy từ cell area trong Liberty library. Nó là diện tích của các standard-cell instance sau technology mapping, tức cell area, chưa phải die area/floorplan area.
+
+# Floorplan
+## 2_1_floorplan:
+[INFO IFP-0107] Defining die area using utilization: 40.00% and aspect ratio: 1.
+[WARNING IFP-0028] Core area lower left (2.000, 2.000) snapped to (2.300, 2.720).
+[INFO IFP-0001] Added 54 rows of 321 site unithd.
+[INFO IFP-0100] Die BBox:  (  0.000  0.000 ) ( 152.385 152.385 ) um
+[INFO IFP-0101] Core BBox: (  2.300  2.720 ) ( 149.960 149.600 ) um
+[INFO IFP-0102] Core area:                        21688.301 um^2
+[INFO IFP-0103] Total instances area:              8807.197 um^2
+[INFO IFP-0104] Effective utilization:                0.406
+[INFO IFP-0105] Number of instances:                   1258
+
+=> Không có cell nào được thêm/xóa đáng kể ở floorplan, nên instance area giữ nguyên.
+
+Floorplan thay đổi geometry, nhưng trong run này không làm thay đổi số lượng/diện tích standard-cell instance.
+Geometry ở đây là hình dạng và kích thước vật lý của layout. Trong floorplan, ví dụ:
+- Die: 152.385 × 152.385 µm
+- Core: 147.66 × 146.88 µm
+- Vị trí các cell, macro, power grid, routing tracks...
+Vì vậy thay đổi geometry = thay đổi các kích thước/vị trí/hình dạng vật lý này, chứ không nhất thiết thay đổi số lượng logic.
+Ví dụ tăng CORE_MARGIN → làm die lớn hơn, core giữ nguyên (die = cạnh core mục tiêu + 2 × margin) → geometry thay đổi, nhưng số lượng cell logic không đổi.
+
+## 2_2_floorplan_macro: No macros found: Skipping macro_placement
+
+## 2_3_floorplan_tapcell:
+
+Inserted 280 tapcells → instance area tăng và design area tăng
+trước: 8807 µm²;   sau:   9158 µm²;    ΔA ≈ 351 µm²
+
+chưa nên kết luận ngay 351 / 280 = 1.25 µm² chính là diện tích chính xác của tapcell. Đó là một hypothesis có thể kiểm tra bằng LEF/Liberty.
+
+Tìm được trong file ~/eda/repos/OpenROAD-flow-scripts/flow/platforms/sky130hd/lef/sky130_fd_sc_hd_merged.lef:
+
+MACRO sky130_fd_sc_hd__tapvpwrvgnd_1
+  CLASS CORE WELLTAP ;
+  FOREIGN sky130_fd_sc_hd__tapvpwrvgnd_1 ;
+  ORIGIN  0.000000  0.000000 ;
+  SIZE  0.460000 BY  2.720000 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+  PIN VGND
+    DIRECTION INOUT ;
+    SHAPE ABUTMENT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000000 -0.240000 0.460000 0.240000 ;
+      LAYER pwell ;
+        RECT 0.145000 0.320000 0.315000 0.845000 ;
+    END
+  END VGND
+  PIN VPWR
+    DIRECTION INOUT ;
+    SHAPE ABUTMENT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000000 2.480000 0.460000 2.960000 ;
+      LAYER nwell ;
+        RECT -0.190000 1.305000 0.650000 2.910000 ;
+    END
+  END VPWR
+  OBS
+    LAYER li1 ;
+      RECT 0.000000 -0.085000 0.460000 0.085000 ;
+      RECT 0.000000  2.635000 0.460000 2.805000 ;
+      RECT 0.085000  0.085000 0.375000 0.810000 ;
+      RECT 0.085000  1.470000 0.375000 2.635000 ;
+    LAYER mcon ;
+      RECT 0.145000 -0.085000 0.315000 0.085000 ;
+      RECT 0.145000  2.635000 0.315000 2.805000 ;
+  END
+END sky130_fd_sc_hd__tapvpwrvgnd_1
+
+→ Diện tích của cell là 1.2512 µm².
+
+## 2_4_floorplan_pdn: 
+PDN thêm physical power-grid geometry chứ không thêm standard-cell instances theo cách mà report_design_area đang đo.
+PDN → thêm physical power network → report_design_area không tăng
+
+# Placement
+## 3_1_place_gp_skip_io
+
+3_1_place_gp_skip_io: chạy Global Placement cho standard cells nhưng bỏ qua việc tối ưu vị trí I/O pins (skip_io). Mục tiêu chính là tìm vị trí ban đầu tốt cho các movable cells, dựa trên wirelength, density và congestion.
+
+Global placement không làm tăng cell area
+Các dòng quan trọng:
+Movable instances area: 8807.197 um^2
+Fixed instances area:     350.336 um^2
+Total instances area:    9157.533 um^2
+
+Trong đó:
+- 8807.197 = các movable standard-cell instances từ synthesis.
+- 350.336 = 280 tapcells.
+- Không có IO cell nào được thêm ở đây.
+
+Pin density area adjust: 997.178 um^2
+Placed Cell Area:       9804.3744 um^2
+mà: 8807.197 + 997.178 ≈ 9804.374
+
+Vì vậy Placed Cell Area không nên ghi là “actual cell area”. Nó là một effective area metric phục vụ thuật toán placement, đã tính thêm pin density area adjust.
+
+Pin density area adjust: phần diện tích nhân tạo được cộng thêm vào cell area để placer tính đến mật độ pin. Cell có nhiều pin/đấu nối dày có thể cần thêm “effective area” để tránh placement quá dày về routing.
+
+Lưu ý metric: “Utilization” trong log GPL không cùng định nghĩa với report_design_area. Ở 3_1: GPL-0019 45.948% = 9804.374 / (21688.301 − 350.336), tức area đã cộng pin density adjust chia cho free area. Còn report_design_area: 9158 / 21688.301 = 42%. Pin density area adjust là tính năng của gpl, bật mặc định. Khi lập bảng chỉ dùng dòng Design area ... % utilization.
+
+## 3_2_place_iop
+3_2_place_iop: I/O pin placement, tức đặt vị trí các top-level pins của design trên biên của core/die.
+
+Ví dụ alu32 có:
+input  a[31:0]
+input  b[31:0]
+input  op[...]
+output y[31:0]
+
+ORFS sẽ quyết định mỗi pin nằm ở vị trí nào trên boundary:
+       a0 a1 a2 ... a31
+   ┌─────────────────────┐
+   │                     │
+op │       standard      │ y0
+   │        cells        │ y1
+   │                     │
+   └─────────────────────┘
+       b0 b1 ... b31
+
+place_pins đặt pin trên biên die để giảm wirelength của các net, nên cần biết vị trí cell trước. Vì vậy flow là: 3_1 global placement bỏ qua IO port khi tính wirelength, rồi 3_2 place_pins (PPL-0012: I/O nets HPWL 6138.21 µm), rồi 3_3 global placement có IO
+
+Mục đích là giảm wirelength/congestion và tạo vị trí I/O hợp lý cho routing.
+
+I/O cell insertion trong floorplan là chuyện khác: thêm physical I/O cells/pads vào chip, thường gặp ở thiết kế có pad ring/chip-level I/O.
+Trong alu32, 3_2_place_iop chỉ đang đặt pins, không phải thêm I/O cells/pads.
+
+→ Diện tích của design area không thay đổi
+
+## 3_3_place_gp
+3_3_place_gp: Global Placement là tìm vị trí ban đầu cho các movable standard cells, tối ưu chủ yếu theo wirelength + density/congestion.
+
+Trong 3_3 có nhiều operation làm thay đổi cell population/cell size:
+Removed 97 buffers
+Inserted 68 input buffers
+Inserted 32 output buffers
+-97 + 68 + 32 = +3 instances
+Gỡ 97 buffer của synthesis, chèn 100 port buffer (68 + 32 = số I/O ở PPL-0002): movable 8807.197 → 9378.995
+
+Sau đó còn có timing-driven repair: repair_design trong GPL (GPL-0107)
+Resized 7 instances.
+Inserted 9 buffers in 7 nets.
+Timing-driven: repair_design delta area:
+121.984 um^2 (+1.16%)
+
+Vì vậy, actual cell-area increase ở 3_3 chủ yếu đến từ buffering/resizing, không phải từ việc global placement đặt cell vào vị trí mới.
+
+GPL-0107 là gì? Đó là mã message của OpenROAD, dạng <module>-<số>. GPL là module global placement, 0107 là số thứ tự message trong module đó. Nội dung nằm ở chính dòng log:
+[INFO GPL-0107] Timing-driven: repair_design delta area: 121.984 um^2 (+1.16%)
+Dòng này cho biết repair_design chạy bên trong global placement (lần timing-driven) làm area tăng 121.984 µm². Tra lại bằng grep -n "GPL-0107" work/logs/sky130hd/alu32/base/3_3_place_gp.log.
+
+
+Cẩn thận với Final placement area = 11607.35
+
+Đây là điểm quan trọng nhất để tránh nhầm metric.
+Log có:
+Original area:                    10536.88
+Total routability artificial inflation: 825.26
+Final placement area:             11607.35 (+10.16%)
+
+OpenROAD/RePlAce tách Original area, timing-driven delta area và routability artificial inflation; đây là các metric phục vụ thuật toán placement, không phải “die area”.
+
+Trong khi đó:
+report_design_area
+Design area 9856 um^2 45% utilization.
+report_design_area mới là command dùng để report area của các component của design và utilization. ORFS cũng dùng chính command này để xem design area sau placement/route.
+
+→ Global placement không tự làm thay đổi physical area của standard-cell; tuy nhiên stage 3_3_place_gp có port buffering, timing-driven resizing/buffering và routability-driven artificial inflation. Vì vậy log xuất hiện nhiều loại “area” khác nhau. Cần phân biệt actual design area với effective placement area dùng bên trong placer.
+
+## 3_4_place_resized
+không phải placement lại, mà là timing/DRC-driven cell optimization
+
+Đoạn quan trọng:
+estimate_parasitics -placement
+repair_design -verbose -match_cell_footprint
+
+estimate_parasitics -placement ước lượng wire parasitics dựa trên vị trí hiện tại của cells.
+
+Sau đó:
+repair_design
+
+OpenROAD tìm các vấn đề về timing/electrical design và có thể:
+- insert buffer
+- resize cell
+- thay đổi cell variant có drive strength khác
+- sửa các net có vấn đề về slew/capacitance/fanout...
+
+Trong trường hợp alu:
+Resized = 0
+Buffers = 0
+
+Thực tế không có cell nào được resize và không có buffer nào được thêm.
+→ Diện tích của design area không thay đổi
+
+Remaining: 1442 → 0
+Không có nghĩa là OpenROAD đã sửa 1442 nets. Đây là số net còn được xem xét trong quá trình repair_design; nhưng cuối cùng nó không thực hiện resize/buffer nào.
+
+## 3_5_place_dp
+đây là detailed placement.
+detailed_placement chủ yếu thay đổi vị trí của các standard cells, không thay đổi bản thân cell.
+
+Diamond Move Success: 1275 → Tức là 1275 cells được legalization/move.
+
+Instances area: 9855.70 um²
+Utilization: 45.4%
+vẫn giữ nguyên, lý do là Cell placement ≠ cell resizing/insertion.
+Ví dụ cell NAND2_X1 có diện tích cố định. Detailed placement có thể chuyển nó (x1, y1) → (x2, y2) nhưng không biến nó thành một cell khác.
+
+3_5 thực sự cải thiện cái gì?
+Ban đầu sau global placement: original HPWL      29886.0 u
+Sau legalization: legalized HPWL     31427.3 u
+Legalization làm wirelength xấu đi khoảng 5%: delta HPWL         +5%
+
+Sau đó improve_placement cố gắng tối ưu lại vị trí:
+Original HPWL      31427.3 u
+Final HPWL         29638.0 u
+Delta HPWL         -5.7%
+
+Sau optimize_mirroring:
+HPWL before        29638.0 u
+HPWL after         29618.2 u
+HPWL delta         -0.1%
+
+Global placement
+      ↓
+Legalization
+      ↓
+HPWL xấu đi
+      ↓
+Detailed placement optimization
+      ↓
+HPWL giảm lại
+      ↓
+Mirror optimization
+      ↓
+HPWL giảm thêm một chút
+
+Nghĩa là detailed placement không chỉ "legalize" cells. Nó còn tối ưu vị trí các cells để giảm wirelength.
+
+log cho thấy cụ thể các thuật toán được sử dụng: independent set matching, global swaps, vertical swaps, reordering, random improvement, cell flipping, optimize_mirroring
+
+Ví dụ: 
+global swaps, improvement = 1.57%
+vertical swaps, improvement = 0.44%
+reordering, improvement = 0.07%
+random improver, improvement = 1.56%
+cell flipping, improvement = 2.22%
+
